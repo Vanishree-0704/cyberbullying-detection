@@ -1,0 +1,30 @@
+{
+    "manifest_version": 3,
+    "name": "CyberGuard: Real-time Instagram Protection",
+    "version": "1.0",
+    "description": "Protects users from cyberbullying on Instagram using BERT AI.",
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "http://localhost:8000/*",
+        "https://*.instagram.com/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.instagram.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "css": [
+                "overlay.css"
+            ]
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": "icon.png"
+    }
+}
