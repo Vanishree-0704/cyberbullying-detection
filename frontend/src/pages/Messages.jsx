@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Shield, Search, MoreHorizontal, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Send, Shield, Search, MoreHorizontal, CheckCircle2, AlertCircle, Heart, Trash2 } from 'lucide-react';
 import apiClient from '../api/config';
 
 const Messages = ({ session, preselectedReceiver }) => {
@@ -60,16 +60,13 @@ const Messages = ({ session, preselectedReceiver }) => {
             if (!activeChat) return;
             try {
                 const res = await apiClient.get(`/messages/${session.id}/${activeChat.id}`);
-                // Filter messages between session and activeChat
-                const filtered = res.data.filter(m =>
-                    (m.sender_id === session.id && m.receiver_id === activeChat.id) ||
-                    (m.sender_id === activeChat.id && m.receiver_id === session.id)
-                );
-                setChatHistory(filtered.map(m => ({
+                setChatHistory(res.data.map(m => ({
                     id: m.id,
                     sender: m.sender_id === session.id ? 'me' : 'other',
                     text: m.content,
                     toxic: m.is_toxic,
+                    is_recalled: m.is_recalled,
+                    likes: m.likes || 0,
                     timestamp: m.timestamp
                 })));
             } catch (e) { }
@@ -187,15 +184,53 @@ const Messages = ({ session, preselectedReceiver }) => {
                     {/* Messages */}
                     <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar bg-[radial-gradient(circle_at_50%_50%,#0c0c0e_0%,#000000_100%)]">
                         {chatHistory.length > 0 ? chatHistory.map(m => (
-                            <div key={m.id} className={`flex ${m.sender === 'me' ? 'justify-end' : 'justify-start'} group animate-in slide-in-from-bottom-2 duration-300`}>
-                                <div className={`max-w-[70%] relative ${m.toxic ? 'border border-rose-500/20 rounded-[2rem]' : ''}`}>
+                            <div key={m.id} className={`flex ${m.sender === 'me' ? 'justify-end' : 'justify-start'} group animate-in slide-in-from-bottom-2 duration-300 relative`}>
+                                <div className={`max-w-[70%] relative ${m.toxic ? 'border border-rose-500/20 rounded-[2rem]' : ''} group`}>
                                     <div className={`
-                                        p-6 rounded-[2rem] text-[13px] leading-relaxed font-medium
+                                        p-6 rounded-[2rem] text-[13px] leading-relaxed font-medium transition-all relative
                                         ${m.sender === 'me' ? 'bg-sky-500 text-white rounded-tr-none shadow-xl shadow-sky-500/10' : 'bg-zinc-900 text-zinc-200 rounded-tl-none border border-white/5'}
                                         ${m.toxic ? 'bg-rose-950/40 blur-[15px] opacity-20 select-none' : ''}
+                                        ${m.is_recalled ? 'opacity-40 italic' : ''}
                                     `}>
                                         {m.text}
+                                        {m.likes > 0 && (
+                                            <div className="absolute -bottom-2 right-4 bg-zinc-800 border border-white/10 rounded-full px-2 py-0.5 flex items-center gap-1 scale-90">
+                                                <Heart size={10} className="fill-rose-500 text-rose-500" />
+                                                <span className="text-[10px] font-black">{m.likes}</span>
+                                            </div>
+                                        )}
                                     </div>
+
+                                    {!m.is_recalled && (
+                                        <div className={`absolute top-0 ${m.sender === 'me' ? '-left-12' : '-right-12'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2`}>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const res = await apiClient.post(`/messages/like/${m.id}`);
+                                                        setChatHistory(prev => prev.map(msg => msg.id === m.id ? { ...msg, likes: res.data.likes } : msg));
+                                                    } catch (e) { }
+                                                }}
+                                                className="p-2 bg-zinc-900 rounded-full hover:bg-rose-500/10 transition-colors"
+                                            >
+                                                <Heart size={14} className="text-rose-500" />
+                                            </button>
+                                            {m.sender === 'me' && (
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!window.confirm("Unsend message?")) return;
+                                                        try {
+                                                            await apiClient.delete(`/messages/${m.id}`, { params: { user_id: session.id } });
+                                                            setChatHistory(prev => prev.map(msg => msg.id === m.id ? { ...msg, is_recalled: true, text: "🛡️ Content Restrained" } : msg));
+                                                        } catch (e) { }
+                                                    }}
+                                                    className="p-2 bg-zinc-900 rounded-full hover:bg-rose-500/10 transition-colors"
+                                                >
+                                                    <Trash2 size={14} className="text-zinc-500 group-hover:text-rose-500" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {m.toxic && (
                                         <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
                                             <AlertCircle size={28} className="text-rose-500 mb-2 animate-pulse" />

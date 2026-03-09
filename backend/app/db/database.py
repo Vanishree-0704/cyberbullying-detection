@@ -21,10 +21,10 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True)
+    email = Column(String, index=True)
     full_name = Column(String)
     password = Column(String)
-    profile_pic = Column(String, default="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150")
+    profile_pic = Column(String, nullable=True)
     bio = Column(String, default="CyberGuard Protected Account")
     followers_count = Column(Integer, default=0)
     following_count = Column(Integer, default=0)
@@ -37,10 +37,19 @@ class Post(Base):
     caption = Column(String)
     is_reel = Column(Boolean, default=False)
     category = Column(String, default="General") # Comedy, Tech, Music, etc.
+    music_id = Column(Integer, ForeignKey("music.id"), nullable=True)
     music_name = Column(String, nullable=True)
-    likes = Column(Integer, default=0)
+    music_url = Column(String, nullable=True)
+    music_cover = Column(String, nullable=True)
+    likes_count = Column(Integer, default=0) # Total count for easy access
     is_toxic = Column(Boolean, default=False)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class PostLike(Base):
+    __tablename__ = "post_likes"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
 
 class Story(Base):
     __tablename__ = "stories"
@@ -48,8 +57,12 @@ class Story(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     media_url = Column(String)
     mentions = Column(JSON) # List of mentioned usernames
+    music_id = Column(Integer, ForeignKey("music.id"), nullable=True)
+    music_name = Column(String, nullable=True)
+    music_url = Column(String, nullable=True)
+    music_cover = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    expires_at = Column(DateTime)
+    expires_at = Column(DateTime, default=lambda: datetime.datetime.utcnow() + datetime.timedelta(hours=24))
 
 class Music(Base):
     __tablename__ = "music"
@@ -58,6 +71,7 @@ class Music(Base):
     artist = Column(String)
     cover_url = Column(String)
     audio_url = Column(String)
+    spotify_url = Column(String, nullable=True)
     language = Column(String) # Tamil, English
 
 class Message(Base):
@@ -67,6 +81,8 @@ class Message(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"))
     content = Column(String)
     is_toxic = Column(Boolean, default=False)
+    likes_count = Column(Integer, default=0)
+    is_recalled = Column(Boolean, default=False)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Comment(Base):
@@ -76,9 +92,36 @@ class Comment(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     username = Column(String)
     text = Column(String)
+    parent_id = Column(Integer, ForeignKey("comments.id"), nullable=True)
+    likes_count = Column(Integer, default=0)
     is_toxic = Column(Boolean, default=False)
     toxicity_score = Column(Float, default=0.0)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class CommentLike(Base):
+    __tablename__ = "comment_likes"
+    id = Column(Integer, primary_key=True, index=True)
+    comment_id = Column(Integer, ForeignKey("comments.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+class Highlight(Base):
+    __tablename__ = "highlights"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    name = Column(String)
+    cover_url = Column(String)
+
+class HighlightItem(Base):
+    __tablename__ = "highlight_items"
+    id = Column(Integer, primary_key=True, index=True)
+    highlight_id = Column(Integer, ForeignKey("highlights.id"))
+    story_id = Column(Integer, ForeignKey("stories.id"))
+
+class TaggedPost(Base):
+    __tablename__ = "tagged_posts"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
 
 class FlaggedComment(Base):
     __tablename__ = "flagged_comments"
@@ -95,6 +138,14 @@ class Follower(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     follower_id = Column(Integer, ForeignKey("users.id"))
+
+class OTP(Base):
+    __tablename__ = "otps"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True)
+    code = Column(String)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    expires_at = Column(DateTime)
 
 Base.metadata.create_all(bind=engine)
 

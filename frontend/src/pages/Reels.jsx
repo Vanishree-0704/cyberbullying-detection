@@ -65,7 +65,7 @@ const Reels = ({ onProfileClick }) => {
                                 src={reel.image_url}
                                 className="h-full w-full object-cover"
                                 loop
-                                muted={false}
+                                muted={activeIndex !== index}
                                 playsInline
                                 autoPlay={activeIndex === index}
                             />

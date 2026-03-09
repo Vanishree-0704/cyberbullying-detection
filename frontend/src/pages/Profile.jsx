@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Grid, Heart, MessageCircle, X, Edit2, Trash2, UserSquare, Users } from 'lucide-react';
+import { Settings, Grid, Heart, MessageCircle, X, Edit2, Trash2, UserSquare, Users, Play, PlusSquare } from 'lucide-react';
 import apiClient from '../api/config';
 
-const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
+const Profile = ({ user, setSession, targetUsername, onProfileClick, onMessageClick }) => {
     const [profileData, setProfileData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
@@ -23,6 +23,8 @@ const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
     const currentUsername = targetUsername || user.username;
     const isOwnProfile = user && user.username === currentUsername;
 
+    const [activeTab, setActiveTab] = useState('posts');
+
     useEffect(() => {
         fetchProfile();
     }, [currentUsername]);
@@ -30,7 +32,9 @@ const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
     const fetchProfile = async () => {
         setLoading(true);
         try {
-            const res = await apiClient.get(`/profile/${currentUsername}`);
+            const res = await apiClient.get(`/profile/${currentUsername}`, {
+                params: { current_user_id: user.id }
+            });
             setProfileData(res.data);
             setEditForm({
                 full_name: res.data.user.full_name,
@@ -92,6 +96,10 @@ const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
                 profile_pic: finalPicUrl
             });
             setProfileData({ ...profileData, user: res.data });
+            if (setSession) {
+                setSession(res.data);
+                localStorage.setItem('cyberguard_user', JSON.stringify(res.data));
+            }
             setIsEditing(false);
             setLocalFile(null);
         } catch (e) {
@@ -132,11 +140,18 @@ const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
 
 
     if (loading) {
-        return <div className="text-white p-10 text-center mt-20">Loading...</div>;
+        return <div className="text-white p-10 text-center mt-20 font-black animate-pulse">Syncing with Meta-Data...</div>;
     }
 
     if (!profileData) {
-        return <div className="text-white p-10 text-center mt-20">Profile not found.</div>;
+        return (
+            <div className="text-white p-10 text-center mt-20 bg-zinc-950 border border-white/5 rounded-[40px] max-w-md mx-auto">
+                <p className="text-rose-500 font-black uppercase tracking-widest mb-4">Integrity Error: 404</p>
+                <div className="text-2xl font-black italic mb-2">Profile "{currentUsername}" not found.</div>
+                <p className="text-zinc-600 text-xs mb-8 uppercase tracking-widest font-bold">The requested user profile does not exist in the current grid database.</p>
+                <button onClick={fetchProfile} className="bg-white text-black text-[10px] font-black px-8 py-3 rounded-full uppercase tracking-widest hover:bg-zinc-200 transition-all">Retry Link</button>
+            </div>
+        );
     }
 
     const profile = profileData.user;
@@ -212,7 +227,7 @@ const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
                     </div>
 
                     <div className="flex gap-6 mb-4 text-sm md:text-base">
-                        <div><span className="font-semibold">{posts.length}</span> posts</div>
+                        <div><span className="font-semibold">{profile.total_posts || profileData.posts?.length || 0}</span> posts</div>
                         <div className="cursor-pointer hover:text-gray-300" onClick={loadFollowers}>
                             <span className="font-semibold">{profile.followers_count || 0}</span> followers
                         </div>
@@ -225,44 +240,89 @@ const Profile = ({ user, targetUsername, onProfileClick, onMessageClick }) => {
                         <h1 className="font-semibold text-sm mb-1">{profile.full_name}</h1>
                         <p className="text-sm whitespace-pre-wrap">{profile.bio}</p>
                     </div>
+
+                    {profileData.mutual_followers?.length > 0 && (
+                        <div className="mt-4 flex items-center gap-2">
+                            <div className="flex -space-x-2">
+                                {profileData.mutual_followers.map(m => (
+                                    <img key={m.id} src={m.profile_pic} className="w-6 h-6 rounded-full border-2 border-zinc-950 object-cover" />
+                                ))}
+                            </div>
+                            <p className="text-[10px] text-zinc-400">
+                                Followed by <span className="text-white font-bold">{profileData.mutual_followers[0].username}</span>
+                                {profileData.mutual_followers.length > 1 && ` and ${profileData.mutual_followers.length - 1} others`}
+                            </p>
+                        </div>
+                    )}
                 </div>
+            </div>
+
+            {/* Highlights */}
+            <div className="flex gap-6 overflow-x-auto no-scrollbar mb-10 px-4">
+                {profileData.highlights?.map(h => (
+                    <div key={h.id} className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer group">
+                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-zinc-900 border border-zinc-800 p-1 flex items-center justify-center transform transition-transform group-hover:scale-105">
+                            <img src={h.cover_url} className="w-full h-full rounded-full object-cover" />
+                        </div>
+                        <span className="text-[10px] font-semibold text-zinc-300 w-20 text-center truncate">{h.name}</span>
+                    </div>
+                ))}
+                {isOwnProfile && (
+                    <div className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer group">
+                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-full border-2 border-zinc-800 border-dashed flex items-center justify-center hover:border-zinc-500 transition-colors">
+                            <PlusSquare size={24} className="text-zinc-500" />
+                        </div>
+                        <span className="text-[10px] font-semibold text-zinc-500">New</span>
+                    </div>
+                )}
             </div>
 
             {/* Tabs */}
-            <div className="flex justify-center gap-12 border-t border-zinc-800 mt-[-40px] pt-4 mb-6">
-                <div className="flex items-center gap-2 text-xs font-semibold tracking-widest uppercase cursor-pointer border-t border-white pt-3 -mt-4">
-                    <Grid size={16} /> POSTS
-                </div>
+            <div className="flex justify-center gap-12 border-t border-zinc-800 pt-4 mb-6">
+                {[
+                    { id: 'posts', label: 'POSTS', icon: Grid },
+                    { id: 'reels', label: 'REELS', icon: Play },
+                    { id: 'tagged', label: 'TAGGED', icon: UserSquare }
+                ].map(tab => (
+                    <div
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex items-center gap-2 text-[10px] font-black tracking-widest uppercase cursor-pointer pt-3 -mt-4 transition-all ${activeTab === tab.id ? 'border-t border-white text-white' : 'text-zinc-500 hover:text-white'}`}
+                    >
+                        <tab.icon size={14} /> {tab.label}
+                    </div>
+                ))}
             </div>
 
-            {/* Posts Grid */}
+            {/* Content Grid */}
             <div className="grid grid-cols-3 gap-1 md:gap-4">
-                {posts.map((post) => (
+                {(activeTab === 'posts' ? profileData.posts : activeTab === 'reels' ? profileData.reels : profileData.tagged).map((item) => (
                     <div
-                        key={post.id}
+                        key={item.id}
                         className="aspect-square relative group cursor-pointer bg-zinc-900 overflow-hidden"
                         onClick={() => {
-                            if (isOwnProfile) {
-                                setSelectedPost(post);
-                                setEditCaption(post.caption);
+                            if (isOwnProfile || activeTab !== 'tagged') {
+                                setSelectedPost(item);
+                                setEditCaption(item.caption || "");
                             }
                         }}
                     >
-                        {post.is_reel && (
-                            <video src={post.image_url} className="w-full h-full object-cover" />
-                        )}
-                        {!post.is_reel && (
-                            <img src={post.image_url} className="w-full h-full object-cover" alt={post.caption} />
-                        )}
-                        {/* Hover Overlay */}
-                        <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-6 transition-opacity duration-200">
-                            <div className="flex items-center gap-2">
-                                <Heart size={20} className="fill-white" />
-                                <span className="font-semibold">{post.likes || 0}</span>
+                        {item.is_reel ? (
+                            <div className="w-full h-full relative">
+                                <video src={item.image_url} className="w-full h-full object-cover" />
+                                <div className="absolute top-2 right-2"><Play size={16} fill="white" /></div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <MessageCircle size={20} className="fill-white" />
-                                <span className="font-semibold">{post.comments_count || 0}</span>
+                        ) : (
+                            <img src={item.image_url} className="w-full h-full object-cover" alt="" />
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-4 transition-opacity duration-200">
+                            <div className="flex items-center gap-1 text-xs">
+                                <Heart size={16} className="fill-white" />
+                                <span className="font-bold">{item.likes || 0}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs">
+                                <MessageCircle size={16} className="fill-white" />
+                                <span className="font-bold">{item.comments_count || 0}</span>
                             </div>
                         </div>
                     </div>

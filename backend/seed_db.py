@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
-from app.db.database import SessionLocal, User, Post, Comment, FlaggedComment, Base, engine, Follower
+from app.db.database import SessionLocal, User, Post, Comment, FlaggedComment, Base, engine, Follower, Story, Music, PostLike, CommentLike, Highlight, HighlightItem, TaggedPost
 from app.core.classifier import classifier_service
+from app.core.security import get_password_hash
 import datetime
 import random
 
@@ -23,6 +24,7 @@ def seed():
 
     db_users = []
     for u in main_users:
+        u["password"] = get_password_hash(u["password"])
         user = User(**u)
         db.add(user)
         db_users.append(user)
@@ -39,7 +41,7 @@ def seed():
             username=username,
             email=f"{username}@example.com",
             full_name=f"{name} {surname}",
-            password="password123",
+            password=get_password_hash("password123"),
             bio=f"Tech enthusiast and CyberGuard user | Member #{100+i}",
             followers_count=random.randint(10, 500),
             following_count=random.randint(50, 200)
@@ -80,28 +82,21 @@ def seed():
             "user_id": 1, 
             "image_url": "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&fit=crop",
             "caption": "CyberGuard AI is now officially monitoring the network. Safety first! 🛡️💻",
-            "likes": 4200,
+            "likes_count": 4200,
             "is_reel": False
         },
         {
             "user_id": 2, 
             "image_url": "https://images.unsplash.com/photo-1618477388954-7852f32655ec?w=800&fit=crop",
             "caption": "New UI layout for the analytics page. Clean, dark, and fast. #Design",
-            "likes": 1200,
+            "likes_count": 1200,
             "is_reel": False
         },
         {
             "user_id": 15, 
             "image_url": "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&fit=crop",
             "caption": "Coding session with the squad. Stay safe out there! 💻🛡️",
-            "likes": 850,
-            "is_reel": False
-        },
-        {
-            "user_id": 22, 
-            "image_url": "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&fit=crop",
-            "caption": "Building something great with AI integrity. #CyberSecurity",
-            "likes": 640,
+            "likes_count": 850,
             "is_reel": False
         },
         # REELS
@@ -109,14 +104,7 @@ def seed():
             "user_id": 6, 
             "image_url": "https://player.vimeo.com/external/370331493.sd.mp4?s=33d548697558f692291b9204060591295988d5e0&profile_id=139&oauth2_token_id=57447761",
             "caption": "Exploring the digital frontier with AI protection 🛡️ #Future #Tech",
-            "likes": 15400,
-            "is_reel": True
-        },
-        {
-            "user_id": 3, 
-            "image_url": "https://player.vimeo.com/external/469411136.sd.mp4?s=078862cf9b82776c5b967dc4a8449c289f6b9764&profile_id=139&oauth2_token_id=57447761",
-            "caption": "The pulse of the city never stops. Stay protected in the noise. 🌃 #CityLife",
-            "likes": 9800,
+            "likes_count": 15400,
             "is_reel": True
         }
     ]
@@ -127,14 +115,34 @@ def seed():
         db.add(post)
     
     db.commit()
-    print("Created high-engagement posts and reels.")
 
-    # 4. Add heavy interactions (Comments)
-    # ... (Keeping logic but adding some)
+    # 4. Add Stories & Highlights
+    story_media = [
+        "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&fit=crop",
+        "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=800&fit=crop"
+    ]
+    for i, user in enumerate(db_users[:5]):
+        story = Story(user_id=user.id, media_url=random.choice(story_media), mentions=[])
+        db.add(story)
+    
+    db.commit()
+
+    # 5. Add Music
+    songs = [
+        {"title": "Arabic Kuthu", "artist": "Anirudh", "language": "Tamil", "cover_url": "https://c.saavncdn.com/264/Arabic-Kuthu-From-Beast-Tamil-2022-20220213191500-500x500.jpg"},
+        {"title": "Blinding Lights", "artist": "The Weeknd", "language": "English", "cover_url": "https://upload.wikimedia.org/wikipedia/en/e/e6/The_Weeknd_-_Blinding_Lights.png"}
+    ]
+    for s in songs:
+        m = Music(**s)
+        db.add(m)
+    
+    db.commit()
+
+    # 6. Add heavy interactions (Comments)
     tamil_post_id = 1
     comments = [
-        {"post_id": 1, "user_id": 2, "username": "alex_dev", "text": "This is a massive milestone! 🚀"},
-        {"post_id": 1, "user_id": 12, "username": "toxic_bot_99", "text": "Useless project lol."},
+        {"post_id": 1, "user_id": 2, "username": "alex_dev", "text": "This is a massive milestone! 🚀", "likes_count": 10},
+        {"post_id": 1, "user_id": 12, "username": "toxic_bot_99", "text": "Useless project lol.", "likes_count": 0},
     ]
 
     for c in comments:

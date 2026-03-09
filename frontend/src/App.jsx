@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import apiClient from './api/config';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -12,7 +12,7 @@ import {
     Shield, Heart, MessageCircle, Send, Bookmark, MoreHorizontal,
     Instagram, Search as SearchIcon, Play, User, Home, BarChart3,
     LogOut, PlusSquare, Camera, X, Compass, MapPin, ChevronRight, Image as ImageIcon,
-    CheckCircle2, Sliders, Bell
+    CheckCircle2, Sliders, Bell, Music, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './index.css';
@@ -104,6 +104,11 @@ const StoryViewer = ({ story, stories, onClose, setStory }) => {
                     </div>
                     <div className="flex flex-col">
                         <span className="font-bold text-white text-xs md:text-sm tracking-tight">{story.user} <span className="text-zinc-400 font-normal ml-1">2h</span></span>
+                        {story.music_name && (
+                            <span className="text-[10px] text-zinc-300 flex items-center gap-1 font-bold italic truncate w-32">
+                                <Music size={10} className="animate-pulse" /> {story.music_name}
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -118,15 +123,21 @@ const StoryViewer = ({ story, stories, onClose, setStory }) => {
     );
 };
 
-const StoryBar = ({ onStoryClick, stories }) => {
+const StoryBar = ({ user, onStoryClick, stories }) => {
     return (
         <div className="flex gap-4 overflow-x-auto no-scrollbar pb-6 px-4">
             <div className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer group">
                 <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-zinc-950 border-2 border-zinc-800 p-1 flex items-center justify-center relative">
-                    <div className="w-full h-full bg-zinc-800 rounded-full flex items-center justify-center"><User size={20} className="text-zinc-400" /></div>
+                    <div className="w-full h-full bg-zinc-800 rounded-full flex items-center justify-center overflow-hidden text-sky-500 font-black text-lg">
+                        {user?.profile_pic ? (
+                            <img src={user.profile_pic} className="w-full h-full object-cover" />
+                        ) : (
+                            user?.username ? user.username[0].toUpperCase() : <User size={20} className="text-zinc-400" />
+                        )}
+                    </div>
                     <div className="absolute bottom-0 right-0 bg-sky-500 rounded-full p-1 border-2 border-black"><PlusSquare size={10} className="text-white" /></div>
                 </div>
-                <span className="text-[10px] text-zinc-400 w-16 text-center truncate">Your story</span>
+                <span className="text-[10px] text-zinc-400 w-16 text-center truncate italic font-black uppercase tracking-tighter">Your story</span>
             </div>
             {stories.map(s => (
                 <div key={s.id} className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer group" onClick={() => onStoryClick(s)}>
@@ -150,6 +161,86 @@ const PostItem = ({ post, session, onProfileClick }) => {
     const [isLiking, setIsLiking] = useState(false);
     const [localLikes, setLocalLikes] = useState(post.likes || 0);
     const [hasLiked, setHasLiked] = useState(false);
+    const [audio, setAudio] = useState(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [showMusicCard, setShowMusicCard] = useState(false);
+    const videoRef = useRef(null);
+
+    // Auto-play on screen logic
+    useEffect(() => {
+        const options = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.6, // Play when 60% visible
+        };
+
+        const callback = (entries) => {
+            entries.forEach((entry) => {
+                if (videoRef.current) {
+                    if (entry.isIntersecting) {
+                        videoRef.current.play().catch(() => { });
+                    } else {
+                        videoRef.current.pause();
+                    }
+                }
+            });
+        };
+
+        const observer = new IntersectionObserver(callback, options);
+        if (videoRef.current) observer.observe(videoRef.current);
+
+        return () => {
+            if (videoRef.current) observer.unobserve(videoRef.current);
+        };
+    }, []);
+
+    // Global audio sync
+    useEffect(() => {
+        const handleStop = () => {
+            if (audio) {
+                audio.pause();
+                setIsPlaying(false);
+            }
+        };
+        window.addEventListener('stop-all-audio', handleStop);
+        return () => window.removeEventListener('stop-all-audio', handleStop);
+    }, [audio]);
+
+    const toggleMusic = (e) => {
+        if (e) e.stopPropagation();
+        if (!post.music_url) {
+            alert("This neural pulse has no audio data.");
+            return;
+        }
+
+        if (audio) {
+            if (isPlaying) {
+                audio.pause();
+                setIsPlaying(false);
+            } else {
+                window.dispatchEvent(new CustomEvent('stop-all-audio'));
+                audio.play().catch(err => console.error("Audio play failed:", err));
+                setIsPlaying(true);
+            }
+        } else {
+            window.dispatchEvent(new CustomEvent('stop-all-audio'));
+            const newAudio = new Audio(post.music_url);
+            newAudio.play().catch(err => {
+                console.error("Audio play failed:", err);
+                alert("Browser blocked auto-play. Click again to override.");
+            });
+            setAudio(newAudio);
+            setIsPlaying(true);
+            newAudio.onended = () => setIsPlaying(false);
+        }
+    };
+
+    // Cleanup audio on unmount
+    useEffect(() => {
+        return () => {
+            if (audio) audio.pause();
+        };
+    }, [audio]);
 
     useEffect(() => {
         const fetchComments = async () => {
@@ -187,15 +278,29 @@ const PostItem = ({ post, session, onProfileClick }) => {
     };
 
     const handleLike = async () => {
-        if (hasLiked) return;
         if (isLiking) return;
         setIsLiking(true);
         try {
-            const res = await apiClient.post(`/posts/like/${post.id}`);
+            const res = await apiClient.post(`/posts/like/${post.id}`, { user_id: session.id });
             setLocalLikes(res.data.likes);
-            setHasLiked(true);
+            setHasLiked(res.data.status === 'liked');
         } catch (e) { }
-        setTimeout(() => setIsLiking(false), 1000);
+        setTimeout(() => setIsLiking(false), 500);
+    };
+
+    const handleCommentLike = async (commentId) => {
+        try {
+            const res = await apiClient.post(`/comments/like/${commentId}`, { user_id: session.id });
+            setComments(comments.map(c => c.id === commentId ? { ...c, likes_count: res.data.likes } : c));
+        } catch (e) { }
+    };
+
+    const handleDeleteComment = async (commentId) => {
+        if (!window.confirm("Delete this comment?")) return;
+        try {
+            await apiClient.delete(`/comments/${commentId}`, { params: { user_id: session.id } });
+            setComments(comments.filter(c => c.id !== commentId));
+        } catch (e) { }
     };
 
     return (
@@ -215,10 +320,52 @@ const PostItem = ({ post, session, onProfileClick }) => {
                             <span className="text-zinc-500 text-[13px]">1d</span>
                             <button className="text-sky-500 font-bold text-[13px] ml-1 hover:text-white transition-colors">Follow</button>
                         </div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                            <Shield size={8} className="text-emerald-400" />
-                            <span className="text-[7px] font-black text-emerald-400 uppercase tracking-widest leading-none">Safe Sentiment Detected</span>
-                        </div>
+                        {post.music_name ? (
+                            <div className="flex items-center gap-1 mt-0.5 text-zinc-400 cursor-pointer group/music relative"
+                                onClick={(e) => {
+                                    setShowMusicCard(!showMusicCard);
+                                    if (!isPlaying) toggleMusic(e);
+                                }}>
+                                <Music size={10} className={`text-white ${isPlaying ? 'animate-spin' : 'animate-pulse'}`} />
+                                <span className="text-[9px] font-bold uppercase tracking-tighter italic overflow-hidden text-ellipsis whitespace-nowrap max-w-[150px] group-hover:text-sky-400 transition-colors">
+                                    {post.music_name} {isPlaying ? '(Active Feed)' : '(Muted)'}
+                                </span>
+
+                                <AnimatePresence>
+                                    {showMusicCard && post.music_cover && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                                            className="absolute top-6 left-0 z-[100] bg-zinc-950 border border-white/10 p-3 rounded-2xl shadow-2xl flex items-center gap-3 min-w-[200px] backdrop-blur-xl"
+                                        >
+                                            <div className="relative w-12 h-12 flex-shrink-0 group/cover" onClick={toggleMusic}>
+                                                <img src={post.music_cover} className="w-full h-full rounded-lg object-cover shadow-lg" />
+                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/cover:opacity-100 transition-opacity rounded-lg">
+                                                    {isPlaying ? <X size={16} /> : <Play size={16} />}
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 overflow-hidden">
+                                                <p className="text-[10px] font-black text-white uppercase truncate">{post.music_name.split(' - ')[0]}</p>
+                                                <p className="text-[8px] text-zinc-500 font-bold uppercase truncate">{post.music_name.split(' - ')[1] || 'Artist'}</p>
+                                                <button onClick={toggleMusic} className="mt-1 text-[7px] font-black text-sky-500 uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1">
+                                                    {isPlaying ? (
+                                                        <><X size={8} /> TERMINATE FEED</>
+                                                    ) : (
+                                                        <><Play size={8} /> INITIATE FEED</>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 mt-0.5">
+                                <Shield size={8} className="text-emerald-400" />
+                                <span className="text-[7px] font-black text-emerald-400 uppercase tracking-widest leading-none">Safe Sentiment Detected</span>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <MoreHorizontal size={20} className="text-white cursor-pointer hover:text-zinc-400" />
@@ -243,12 +390,13 @@ const PostItem = ({ post, session, onProfileClick }) => {
                 {post.image_url ? (
                     isVideo(post.image_url) ? (
                         <video
+                            ref={videoRef}
                             src={post.image_url}
                             className={`w-full h-full object-cover ${post.is_toxic ? 'blur-2xl opacity-10' : ''}`}
-                            autoPlay
                             controls
                             loop
                             playsInline
+                            muted
                         />
                     ) : (
                         <img src={post.image_url} alt="post" className={`w-full h-full object-cover ${post.is_toxic ? 'blur-2xl opacity-10' : ''}`} />
@@ -278,7 +426,14 @@ const PostItem = ({ post, session, onProfileClick }) => {
                         onClick={handleLike}
                     />
                     <MessageCircle size={26} className="cursor-pointer hover:scale-110" onClick={() => setShowComments(!showComments)} />
-                    <Send size={26} className="cursor-pointer hover:scale-110" />
+                    <Send
+                        size={26}
+                        className="cursor-pointer hover:scale-110"
+                        onClick={() => {
+                            const u = prompt("Enter username to share with:");
+                            if (u) alert(`Shared ${post.is_reel ? 'reel' : 'post'} with @${u}!`);
+                        }}
+                    />
                 </div>
                 <Bookmark size={26} className="cursor-pointer hover:scale-110" />
             </div>
@@ -296,14 +451,33 @@ const PostItem = ({ post, session, onProfileClick }) => {
                 )}
 
                 {showComments && (
-                    <div className="mt-4 space-y-3 bg-zinc-900/50 p-4 rounded-xl border border-white/5 max-h-[200px] overflow-y-auto">
-                        {comments.map(c => (
-                            <div key={c.id} className="flex gap-2 text-sm relative">
-                                <span className="font-bold tracking-tighter uppercase text-[12px] cursor-pointer hover:text-sky-400" onClick={() => onProfileClick(c.username)}>{c.username}</span>
-                                <p className={`${c.is_toxic ? 'blur-[4px] select-none opacity-40' : ''} text-zinc-300`}>{c.text}</p>
-                                {c.is_toxic && (
-                                    <span className="text-[8px] absolute right-0 top-0 font-black text-rose-500/50 border border-rose-500/20 px-2 rounded-full uppercase tracking-widest">Safe-Masked by AI</span>
-                                )}
+                    <div className="mt-4 space-y-3 bg-zinc-900/50 p-4 rounded-xl border border-white/5 max-h-[300px] overflow-y-auto">
+                        {comments.filter(c => !c.parent_id).map(c => (
+                            <div key={c.id} className="space-y-2">
+                                <div className="flex gap-2 text-sm group">
+                                    <span className="font-bold tracking-tighter uppercase text-[12px] cursor-pointer hover:text-sky-400" onClick={() => onProfileClick(c.username)}>{c.username}</span>
+                                    <div className="flex-1">
+                                        <p className={`${c.is_toxic ? 'blur-[4px] select-none opacity-40' : ''} text-zinc-300`}>{c.text}</p>
+                                        <div className="flex items-center gap-3 mt-1 text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
+                                            <span>{c.likes_count || 0} likes</span>
+                                            <button onClick={() => setComment(`@${c.username} `)} className="hover:text-white transition-colors">Reply</button>
+                                            <button onClick={() => handleCommentLike(c.id)} className="hover:text-rose-500 transition-colors">Like</button>
+                                            {(session.id === post.user_id || session.id === c.user_id) && (
+                                                <button onClick={() => handleDeleteComment(c.id)} className="text-zinc-700 hover:text-rose-500 transition-colors">Delete</button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {c.is_toxic && (
+                                        <span className="text-[8px] font-black text-rose-500/50 border border-rose-500/20 px-2 rounded-full uppercase tracking-widest h-fit">Masked</span>
+                                    )}
+                                </div>
+                                {/* Replies (Simplified for demo) */}
+                                {comments.filter(reply => reply.parent_id === c.id).map(reply => (
+                                    <div key={reply.id} className="ml-8 flex gap-2 text-[11px]">
+                                        <span className="font-bold tracking-tighter uppercase text-zinc-400">{reply.username}</span>
+                                        <p className="text-zinc-500">{reply.text}</p>
+                                    </div>
+                                ))}
                             </div>
                         ))}
                     </div>
@@ -364,7 +538,11 @@ export default function App() {
     const [selectedMusic, setSelectedMusic] = useState(null);
     const [activeCategory, setActiveCategory] = useState("General");
     const [activeMusicLang, setActiveMusicLang] = useState("Tamil");
+    const [musicSearch, setMusicSearch] = useState("");
+    const [previewAudio, setPreviewAudio] = useState(null);
     const [stories, setStories] = useState([]);
+    const [createMode, setCreateMode] = useState('post'); // post or story
+    const [revealedIds, setRevealedIds] = useState({});
 
     // RESTORE SESSION ON LOAD
     useEffect(() => {
@@ -383,20 +561,60 @@ export default function App() {
 
     const fetchInitial = async () => {
         setIsLoading(true);
+        console.log("📡 [SYNC] Initiating Global Grid Sync...");
         try {
             const p = await apiClient.get('/posts/all?skip=0&limit=10');
+            console.log("✅ [POSTS] Received:", p.data.length);
             setPosts(p.data);
             setPage(1);
             setHasMore(p.data.length === 10);
-            const s = await apiClient.get('/analytics');
+
+            const [s, lib, st] = await Promise.all([
+                apiClient.get('/analytics'),
+                apiClient.get('/music/library'),
+                apiClient.get('/stories/all')
+            ]);
+
             setStats(s.data);
-            const lib = await apiClient.get('/music/library');
             setMusicLibrary(lib.data);
-            const st = await apiClient.get('/stories/all');
             setStories(st.data);
-        } catch (e) { }
+            console.log("✅ [SYNC] Database Handshake Complete.");
+        } catch (e) {
+            console.error("❌ [SYNC] System Failure:", e);
+            if (e.response?.status === 401) {
+                handleLogout();
+            }
+        }
         finally { setIsLoading(false); }
     };
+
+    const handleMusicSearch = async (val) => {
+        setMusicSearch(val);
+        if (val.length > 1) {
+            try {
+                const res = await apiClient.get(`/music/library?q=${val}`);
+                setMusicLibrary(res.data);
+            } catch (e) { }
+        } else if (val.length === 0) {
+            try {
+                const res = await apiClient.get('/music/library');
+                setMusicLibrary(res.data);
+            } catch (e) { }
+        }
+    }
+
+    const togglePreview = (audioUrl) => {
+        if (previewAudio && previewAudio.src === audioUrl) {
+            previewAudio.pause();
+            setPreviewAudio(null);
+        } else {
+            if (previewAudio) previewAudio.pause();
+            const audio = new Audio(audioUrl);
+            audio.play();
+            setPreviewAudio(audio);
+            audio.onended = () => setPreviewAudio(null);
+        }
+    }
 
     const fetchMore = async () => {
         if (isFetchingMore || !hasMore) return;
@@ -443,7 +661,7 @@ export default function App() {
             // Real-time stats pooling
             const interval = setInterval(async () => {
                 try {
-                    const s = await apiClient.get('/analytics');
+                    const s = await apiClient.get(`/analytics?user_id=${session.id}`);
                     setStats(s.data);
                 } catch (e) { }
             }, 10000);
@@ -455,12 +673,11 @@ export default function App() {
     }, [session]);
 
     const handlePost = async () => {
-        if (!newPost.caption.trim()) return;
+        if (!newPost.caption.trim() && createMode === 'post') return;
         setIsUploading(true);
         try {
             let finalImageUrl = newPost.image;
 
-            // PRODUCTION MEDIA UPLOAD (Cloudinary)
             if (localFile) {
                 const formData = new FormData();
                 formData.append('file', localFile);
@@ -474,24 +691,41 @@ export default function App() {
                 finalImageUrl = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&fit=crop";
             }
 
-            const isReel = isVideo(finalImageUrl);
+            const isReel = !!isVideo(finalImageUrl);
 
-            const res = await apiClient.post('/posts/create', {
-                user_id: session.id,
-                image_url: finalImageUrl,
-                caption: newPost.caption,
-                is_reel: isReel,
-                category: activeCategory,
-                music_name: selectedMusic ? `${selectedMusic.title} - ${selectedMusic.artist}` : null
-            });
-            setPosts([{ ...res.data, user_handle: session.username, user_pic: session.profile_pic }, ...posts]);
+            if (createMode === 'post') {
+                const res = await apiClient.post('/posts/create', {
+                    user_id: session.id,
+                    image_url: finalImageUrl,
+                    caption: newPost.caption,
+                    is_reel: isReel,
+                    category: activeCategory,
+                    music_id: selectedMusic?.id,
+                    music_name: selectedMusic ? `${selectedMusic.title} - ${selectedMusic.artist}` : null,
+                    music_url: selectedMusic?.audio_url,
+                    music_cover: selectedMusic?.cover_url
+                });
+                setPosts([{ ...res.data, user_handle: session.username, user_pic: session.profile_pic }, ...posts]);
+            } else {
+                const res = await apiClient.post('/stories/create', {
+                    user_id: session.id,
+                    media_url: finalImageUrl,
+                    mentions: [],
+                    music_id: selectedMusic?.id,
+                    music_name: selectedMusic ? `${selectedMusic.title} - ${selectedMusic.artist}` : null,
+                    music_url: selectedMusic?.audio_url,
+                    music_cover: selectedMusic?.cover_url
+                });
+                setStories([{ ...res.data, user: session.username, profile_pic: session.profile_pic, img: finalImageUrl }, ...stories]);
+            }
+
             setNewPost({ caption: '', image: '', is_reel: false });
             setLocalFile(null);
             setSelectedMusic(null);
             setShowCreate(false);
             fetchInitial();
         } catch (e) {
-            alert("Post sharing failed. Check uplink.");
+            alert(`Execution Failed: ${e.message}`);
         } finally {
             setIsUploading(false);
         }
@@ -570,7 +804,17 @@ export default function App() {
                                 onClick={item.action ? item.action : () => setView(item.val)}
                                 className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all duration-300 ${view === item.val && (item.val !== 'profile' || targetUsername === session.username) ? 'bg-white/10 font-black text-white shadow-[0_0_20px_rgba(255,255,255,0.05)]' : 'text-zinc-400 hover:bg-white/5 hover:text-white hover:translate-x-1'}`}
                             >
-                                <item.icon size={22} strokeWidth={view === item.val ? 3 : 2} />
+                                {item.label === 'Profile' ? (
+                                    session.profile_pic ? (
+                                        <img src={session.profile_pic} className="w-[22px] h-[22px] rounded-full object-cover ring-1 ring-white/20" />
+                                    ) : (
+                                        <div className="w-[22px] h-[22px] bg-sky-500/20 text-sky-500 rounded-full flex items-center justify-center text-[8px] font-black uppercase ring-1 ring-sky-500/20">
+                                            {session.username[0]}
+                                        </div>
+                                    )
+                                ) : (
+                                    <item.icon size={22} strokeWidth={view === item.val ? 3 : 2} />
+                                )}
                                 <span className="hidden lg:inline text-[13px] tracking-tight">{item.label}</span>
                             </div>
                         ))}
@@ -592,7 +836,7 @@ export default function App() {
             <main className="flex-1 ml-20 lg:ml-64 flex flex-col min-h-screen">
                 {view === 'home' && (
                     <div className="w-full max-w-[600px] mx-auto pt-[60px] lg:pt-12 px-0 md:px-6">
-                        <StoryBar onStoryClick={setActiveStory} stories={stories} />
+                        <StoryBar user={session} onStoryClick={setActiveStory} stories={stories} />
                         <div className="mt-8">
                             {isLoading ? (
                                 [1, 2, 3].map(i => <SkeletonPost key={i} />)
@@ -619,7 +863,28 @@ export default function App() {
                 {view === 'reels' && <Reels onProfileClick={navigateToProfile} />}
                 {view === 'messages' && <Messages session={session} preselectedReceiver={messageReceiver} />}
                 {view === 'notifications' && <Notifications />}
-                {view === 'profile' && <Profile user={session} targetUsername={targetUsername} onProfileClick={navigateToProfile} onMessageClick={navigateToMessages} />}
+                {view === 'profile' && <Profile user={session} setSession={setSession} targetUsername={targetUsername} onProfileClick={navigateToProfile} onMessageClick={navigateToMessages} />}
+                {view === 'music' && (
+                    <div className="w-full max-w-4xl p-6 md:p-12 mt-12 bg-black">
+                        <h2 className="text-3xl md:text-5xl font-black italic text-white tracking-widest mb-12 uppercase">Music Library</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {musicLibrary.map(m => (
+                                <div key={m.id} className="flex items-center justify-between p-6 bg-zinc-950 border border-white/5 rounded-3xl group hover:border-sky-500/50 transition-all cursor-pointer">
+                                    <div className="flex items-center gap-6">
+                                        <img src={m.cover_url} className="w-20 h-20 rounded-2xl object-cover shadow-2xl group-hover:scale-105 transition-transform" />
+                                        <div>
+                                            <p className="text-xl font-black text-white uppercase italic">{m.title}</p>
+                                            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mt-1">{m.artist}</p>
+                                        </div>
+                                    </div>
+                                    {m.spotify_url && (
+                                        <a href={m.spotify_url} target="_blank" rel="noreferrer" className="bg-sky-500 text-white text-[10px] font-black px-6 py-2 rounded-full uppercase tracking-widest hover:bg-sky-600 transition-all">Spotify</a>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 {view === 'analytics' && (
                     <div className="w-full max-w-4xl p-6 md:p-12 mt-12 bg-black">
                         <div className="flex justify-between items-center mb-12">
@@ -636,40 +901,83 @@ export default function App() {
                                     <div className="p-10 border border-rose-500/20 rounded-3xl bg-rose-500/[0.03] flex flex-col items-center">
                                         <p className="text-[10px] text-rose-500 uppercase font-black mb-4 tracking-[0.3em]">Threats Neutered</p>
                                         <h3 className="text-6xl font-thin italic text-rose-500">{stats.toxic_count}</h3>
+                                        <p className="text-[8px] text-rose-500/50 mt-4 uppercase font-bold tracking-widest">Total Bad Comments on Your Posts</p>
                                     </div>
                                     <div className="p-10 border border-emerald-500/20 rounded-3xl bg-emerald-500/[0.03] flex flex-col items-center">
-                                        <p className="text-[10px] text-emerald-500 uppercase font-black mb-4 tracking-[0.3em]">Safety Index</p>
-                                        <h3 className="text-6xl font-thin italic text-emerald-500">{stats.safety_rate.toFixed(1)}%</h3>
+                                        <p className="text-[10px] text-emerald-500 uppercase font-black mb-4 tracking-[0.3em]">Account Safety</p>
+                                        <h3 className="text-6xl font-thin italic text-emerald-500">100%</h3>
                                     </div>
                                 </div>
 
-                                {/* Safety Chart */}
+                                {/* Detailed Post Breakdown */}
                                 <div className="bg-zinc-950 border border-white/5 rounded-[3rem] p-12 mb-12">
-                                    <h4 className="text-[10px] text-zinc-500 uppercase font-black mb-12 tracking-[0.4em]">Integrity Velocity (Weekly Scan)</h4>
-                                    <div className="flex items-end justify-between h-48 gap-4 px-4">
-                                        {[65, 82, 45, 96, 78, 88, 92].map((val, i) => (
-                                            <div key={i} className="flex-1 flex flex-col items-center gap-4 group">
-                                                <div className="relative w-full flex flex-col justify-end h-full">
-                                                    <motion.div
-                                                        initial={{ height: 0 }}
-                                                        animate={{ height: `${val}%` }}
-                                                        className={`w-full rounded-t-xl transition-all duration-500 ${val > 80 ? 'bg-sky-500 shadow-lg shadow-sky-500/20' : 'bg-zinc-800'}`}
-                                                    ></motion.div>
-                                                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-black text-white">{val}%</div>
+                                    <h4 className="text-[10px] text-zinc-500 uppercase font-black mb-12 tracking-[0.4em]">Post-Wise Integrity Breakdown</h4>
+                                    <div className="space-y-6">
+                                        {stats.post_stats && stats.post_stats.length > 0 ? (
+                                            stats.post_stats.map(ps => (
+                                                <div key={ps.id} className="p-6 bg-black border border-white/5 rounded-[2.5rem] hover:border-rose-500/30 transition-all overflow-hidden">
+                                                    <div className="flex items-center justify-between mb-8">
+                                                        <div className="flex items-center gap-6">
+                                                            <div className="w-20 h-20 rounded-3xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
+                                                                <img src={ps.image_url} className="w-full h-full object-cover opacity-60" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[10px] text-zinc-500 font-bold italic mb-2">"{ps.caption}"</p>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="bg-rose-500/10 text-rose-500 text-[9px] font-black px-4 py-1.5 rounded-full border border-rose-500/20 uppercase tracking-widest">
+                                                                        {ps.bad_comments_count} Threats Neutered
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-[10px] font-black text-white uppercase mb-1">Integrity Status</p>
+                                                            <p className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1 justify-end"><Shield size={10} /> Fully Protected</p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Bad Comment Details */}
+                                                    <div className="space-y-4 border-t border-white/5 pt-8">
+                                                        <p className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-6 ml-2">Neural Threat Identification</p>
+                                                        {ps.toxic_details?.map((td, idx) => {
+                                                            const key = `${ps.id}-${idx}`;
+                                                            const isRevealed = revealedIds[key];
+                                                            return (
+                                                                <div key={idx} className="flex items-center justify-between p-5 bg-zinc-950/40 rounded-3xl border border-white/5 group/detail hover:bg-zinc-950 transition-colors">
+                                                                    <div className="flex items-center gap-5">
+                                                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black uppercase transition-all duration-500 ${isRevealed ? 'bg-rose-500/20 text-rose-500 rotate-12' : 'bg-zinc-900 text-zinc-700'}`}>
+                                                                            {isRevealed ? td.username[0] : '?'}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className={`text-[10px] font-black uppercase tracking-tighter transition-all duration-500 ${isRevealed ? 'text-white' : 'text-zinc-800'}`}>
+                                                                                {isRevealed ? td.username : 'Source Encrypted'}
+                                                                            </p>
+                                                                            <p className={`text-[13px] font-medium leading-tight transition-all duration-700 ${isRevealed ? 'text-rose-400 blur-0' : 'text-transparent bg-zinc-900/50 animate-pulse rounded px-2 select-none blur-md'}`}>
+                                                                                {td.text}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => setRevealedIds(prev => ({ ...prev, [key]: !prev[key] }))}
+                                                                        className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all ${isRevealed ? 'bg-rose-500/20 text-rose-500 shadow-lg shadow-rose-500/20' : 'bg-white/5 text-zinc-600 hover:text-white hover:bg-white/10'}`}
+                                                                        title={isRevealed ? "Mask Content" : "Reveal Content"}
+                                                                    >
+                                                                        {isRevealed ? <EyeOff size={18} /> : <Eye size={18} />}
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
-                                                <span className="text-[8px] text-zinc-700 font-black uppercase">{"Mon Tue Wed Thu Fri Sat Sun".split(' ')[i]}</span>
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-10">
+                                                <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+                                                    <Shield size={20} className="text-emerald-500" />
+                                                </div>
+                                                <p className="text-[10px] text-zinc-600 font-black uppercase tracking-widest">Zero Threats Detected Across All Posts</p>
                                             </div>
-                                        ))}
-                                    </div>
-                                    <div className="mt-12 flex justify-center gap-8 border-t border-white/5 pt-8">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-sky-500 rounded-full"></div>
-                                            <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Optimized Integrity</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-zinc-800 rounded-full"></div>
-                                            <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Scan Depth Active</span>
-                                        </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="space-y-12">
@@ -732,18 +1040,28 @@ export default function App() {
                                 <input type="file" ref={fileInputRef} className="hidden" accept="video/*,image/*" onChange={handleFileChange} />
                             </div>
                             <div className="flex-1 flex flex-col">
-                                <div className="p-8 border-b border-white/5 flex justify-between items-center"><h4 className="text-[10px] font-black uppercase tracking-widest text-white">Post Processor</h4><X size={20} className="cursor-pointer text-zinc-600" onClick={() => setShowCreate(false)} /></div>
-                                <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
-                                    <textarea placeholder="Metadata Caption..." className="w-full bg-transparent border-none outline-none text-white resize-none h-24 placeholder:text-zinc-800" value={newPost.caption} onChange={e => setNewPost({ ...newPost, caption: e.target.value })} />
-
-                                    <div className="space-y-4">
-                                        <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Category Flux</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {["General", "Comedy", "Tech", "Music", "Vlog"].map(cat => (
-                                                <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${activeCategory === cat ? 'bg-white text-black' : 'bg-black text-zinc-500 border border-white/5'}`}>{cat}</button>
-                                            ))}
-                                        </div>
+                                <div className="p-8 border-b border-white/5 flex justify-between items-center">
+                                    <div className="flex gap-4">
+                                        <button onClick={() => setCreateMode('post')} className={`text-[10px] font-black uppercase tracking-widest ${createMode === 'post' ? 'text-white border-b-2 border-sky-500 pb-1' : 'text-zinc-500'}`}>Post</button>
+                                        <button onClick={() => setCreateMode('story')} className={`text-[10px] font-black uppercase tracking-widest ${createMode === 'story' ? 'text-white border-b-2 border-sky-500 pb-1' : 'text-zinc-500'}`}>Story</button>
                                     </div>
+                                    <X size={20} className="cursor-pointer text-zinc-600" onClick={() => setShowCreate(false)} />
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
+                                    {createMode === 'post' && (
+                                        <textarea placeholder="Metadata Caption..." className="w-full bg-transparent border-none outline-none text-white resize-none h-24 placeholder:text-zinc-800" value={newPost.caption} onChange={e => setNewPost({ ...newPost, caption: e.target.value })} />
+                                    )}
+
+                                    {createMode === 'post' && (
+                                        <div className="space-y-4">
+                                            <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Category Flux</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {["General", "Comedy", "Tech", "Music", "Vlog"].map(cat => (
+                                                    <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${activeCategory === cat ? 'bg-white text-black' : 'bg-black text-zinc-500 border border-white/5'}`}>{cat}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <div className="space-y-4 pt-6 border-t border-white/5">
                                         <div className="flex justify-between items-center">
@@ -753,17 +1071,37 @@ export default function App() {
                                                 <button onClick={() => setActiveMusicLang("English")} className={`text-[7px] font-black uppercase ${activeMusicLang === 'English' ? 'text-sky-500' : 'text-zinc-700'}`}>English</button>
                                             </div>
                                         </div>
+                                        <div className="relative">
+                                            <SearchIcon size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search Tamil Songs..."
+                                                className="w-full bg-black border border-white/5 rounded-xl py-2 pl-9 pr-4 text-[10px] text-white outline-none focus:border-sky-500/50 transition-all font-bold"
+                                                value={musicSearch}
+                                                onChange={(e) => handleMusicSearch(e.target.value)}
+                                            />
+                                        </div>
                                         <div className="space-y-2">
                                             {musicLibrary.filter(m => m.language === activeMusicLang).map(m => (
                                                 <div key={m.id} onClick={() => setSelectedMusic(m)} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${selectedMusic?.id === m.id ? 'bg-sky-500/10 border border-sky-500/20' : 'bg-black border border-white/5 hover:border-white/20'}`}>
                                                     <div className="flex items-center gap-3">
-                                                        <img src={m.cover_url} className="w-8 h-8 rounded-lg" />
+                                                        <div className="relative group/play">
+                                                            <img src={m.cover_url} className="w-10 h-10 rounded-lg object-cover" />
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); togglePreview(m.audio_url); }}
+                                                                className="absolute inset-0 bg-black/40 items-center justify-center opacity-0 group-hover/play:opacity-100 flex transition-opacity rounded-lg"
+                                                            >
+                                                                {previewAudio && previewAudio.src === m.audio_url ? <X size={16} /> : <Play size={16} />}
+                                                            </button>
+                                                        </div>
                                                         <div>
                                                             <p className="text-[10px] font-black text-white uppercase">{m.title}</p>
                                                             <p className="text-[8px] text-zinc-600 font-bold">{m.artist}</p>
                                                         </div>
                                                     </div>
-                                                    {selectedMusic?.id === m.id && <MusicIcon size={12} className="text-sky-500 animate-bounce" />}
+                                                    <div className="flex items-center gap-3">
+                                                        {selectedMusic?.id === m.id && <Music size={12} className="text-sky-500 animate-bounce" />}
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
