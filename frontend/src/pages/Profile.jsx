@@ -82,12 +82,10 @@ const Profile = ({ user, setSession, targetUsername, onProfileClick, onMessageCl
             if (localFile) {
                 const formData = new FormData();
                 formData.append("file", localFile);
-                const uploadRes = await fetch("http://127.0.0.1:8000/api/v1/posts/upload", {
-                    method: "POST",
-                    body: formData
+                const uploadRes = await apiClient.post('/posts/upload', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
                 });
-                const data = await uploadRes.json();
-                finalPicUrl = data.url;
+                finalPicUrl = uploadRes.data.url;
             }
             const res = await apiClient.post("/profile/update", {
                 user_id: user.id,
@@ -486,9 +484,10 @@ const Profile = ({ user, setSession, targetUsername, onProfileClick, onMessageCl
                                 <div>
                                     <label className="text-xs font-semibold text-zinc-400 mb-2 block uppercase uppercase tracking-wider">Caption</label>
                                     <textarea
-                                        className="w-full bg-black border border-zinc-800 p-3 rounded-lg text-sm resize-none min-h-[150px] focus:outline-none focus:border-zinc-500"
+                                        className={`w-full bg-black border border-zinc-800 p-3 rounded-lg text-sm resize-none min-h-[150px] focus:outline-none focus:border-zinc-500 ${!isOwnProfile ? 'opacity-70' : ''}`}
                                         value={editCaption}
-                                        onChange={(e) => setEditCaption(e.target.value)}
+                                        onChange={(e) => isOwnProfile && setEditCaption(e.target.value)}
+                                        readOnly={!isOwnProfile}
                                     />
                                 </div>
                                 <div className="flex items-center gap-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
@@ -496,21 +495,23 @@ const Profile = ({ user, setSession, targetUsername, onProfileClick, onMessageCl
                                     <div className="flex items-center gap-1"><MessageCircle size={14} /> {selectedPost.comments_count}</div>
                                 </div>
                             </div>
-                            <div className="p-4 border-t border-zinc-800 flex gap-2">
-                                <button
-                                    onClick={handleDeletePost}
-                                    className="p-3 text-red-500 bg-zinc-800 hover:bg-red-500 hover:text-white rounded-lg transition-colors flex items-center justify-center aspect-square"
-                                    title="Delete Post"
-                                >
-                                    <Trash2 size={20} />
-                                </button>
-                                <button
-                                    onClick={handleUpdatePost}
-                                    className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-colors"
-                                >
-                                    Save Changes
-                                </button>
-                            </div>
+                            {isOwnProfile && (
+                                <div className="p-4 border-t border-zinc-800 flex gap-2">
+                                    <button
+                                        onClick={handleDeletePost}
+                                        className="p-3 text-red-500 bg-zinc-800 hover:bg-red-500 hover:text-white rounded-lg transition-colors flex items-center justify-center aspect-square"
+                                        title="Delete Post"
+                                    >
+                                        <Trash2 size={20} />
+                                    </button>
+                                    <button
+                                        onClick={handleUpdatePost}
+                                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-colors"
+                                    >
+                                        Save Changes
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

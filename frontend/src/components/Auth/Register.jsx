@@ -5,6 +5,7 @@ const Register = ({ onSwitch, onRegisterSuccess }) => {
     const [formData, setFormData] = useState({
         username: '',
         password: '',
+        confirm_password: '',
         email: '',
         full_name: '',
         otp_code: ''
@@ -60,6 +61,17 @@ const Register = ({ onSwitch, onRegisterSuccess }) => {
             setError("Please verify your email first");
             return;
         }
+        if (formData.password !== formData.confirm_password) {
+            setError("Passwords do not match");
+            return;
+        }
+
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!passwordRegex.test(formData.password)) {
+            setError("Password must be at least 8 characters, include uppercase, lowercase, number, and a special character (@$!%*?&)");
+            return;
+        }
+
         setError('');
         setLoading(true);
 
@@ -188,6 +200,17 @@ const Register = ({ onSwitch, onRegisterSuccess }) => {
                                         className="w-full bg-zinc-950 border border-white/5 rounded-2xl px-6 py-4 text-white text-sm focus:border-sky-500/50 outline-none transition-all"
                                         value={formData.password}
                                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-[9px] font-black text-zinc-600 uppercase tracking-widest ml-4">Confirm Password</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        className="w-full bg-zinc-950 border border-white/5 rounded-2xl px-6 py-4 text-white text-sm focus:border-sky-500/50 outline-none transition-all"
+                                        value={formData.confirm_password}
+                                        onChange={(e) => setFormData({ ...formData, confirm_password: e.target.value })}
                                     />
                                 </div>
 

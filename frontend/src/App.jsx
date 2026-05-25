@@ -442,7 +442,12 @@ const PostItem = ({ post, session, onProfileClick }) => {
                 <p className="font-bold mb-1">
                     {hasLiked && localLikes > 1 ? `Liked by you and ${(localLikes - 1).toLocaleString()} others` : hasLiked ? 'Liked by you' : `${localLikes.toLocaleString()} likes`}
                 </p>
-                <p><span className="font-bold mr-2 uppercase tracking-tighter cursor-pointer hover:text-sky-400" onClick={() => onProfileClick(post.user_handle)}>{post.user_handle}</span>{post.caption}</p>
+                <p>
+                    <span className="font-bold mr-2 uppercase tracking-tighter cursor-pointer hover:text-sky-400" onClick={() => onProfileClick(post.user_handle)}>{post.user_handle}</span>
+                    {post.caption ? post.caption.split(/(@[a-zA-Z0-9_]+)/g).map((part, i) =>
+                        part.startsWith('@') ? <span key={i} className="text-sky-400 cursor-pointer font-bold hover:underline" onClick={() => onProfileClick(part.substring(1))}>{part}</span> : part
+                    ) : ''}
+                </p>
 
                 {comments.length > 0 && !showComments && (
                     <p className="text-zinc-500 text-xs mt-2 cursor-pointer" onClick={() => setShowComments(true)}>
@@ -1075,14 +1080,14 @@ export default function App() {
                                             <SearchIcon size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
                                             <input
                                                 type="text"
-                                                placeholder="Search Tamil Songs..."
+                                                placeholder="Search Apple Music / Spotify Library..."
                                                 className="w-full bg-black border border-white/5 rounded-xl py-2 pl-9 pr-4 text-[10px] text-white outline-none focus:border-sky-500/50 transition-all font-bold"
                                                 value={musicSearch}
                                                 onChange={(e) => handleMusicSearch(e.target.value)}
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            {musicLibrary.filter(m => m.language === activeMusicLang).map(m => (
+                                            {musicLibrary.filter(m => musicSearch.length > 0 ? true : m.language === activeMusicLang).map(m => (
                                                 <div key={m.id} onClick={() => setSelectedMusic(m)} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${selectedMusic?.id === m.id ? 'bg-sky-500/10 border border-sky-500/20' : 'bg-black border border-white/5 hover:border-white/20'}`}>
                                                     <div className="flex items-center gap-3">
                                                         <div className="relative group/play">

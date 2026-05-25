@@ -105,43 +105,37 @@ import shutil
 
 # ---------- MEDIA UPLOAD ----------
 
+import uuid
+from pathlib import Path
+
 @router.post("/posts/upload")
 async def upload_media(file: UploadFile = File(...)):
-    temp_path = None
     try:
-        # Check Cloudinary Keys explicitly
-        if not os.getenv("CLOUDINARY_API_KEY"):
-            raise Exception("Cloudinary API Keys not found in .env")
-
         print(f"📡 [FILESYSTEM] Buffering {file.filename}...")
         
-        # Save to temp file
-        suffix = f".{file.filename.split('.')[-1]}" if "." in file.filename else ""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            temp_path = tmp.name
-
-        print(f"🎬 [CLOUDINARY] Uploading {file.content_type} with Multi-part Sync...")
+        # Create uploads folder if not exists
+        upload_dir = Path("uploads")
+        upload_dir.mkdir(exist_ok=True)
         
-        # Using upload_large is better for videos and works with auto resource type.
-        result = cloudinary.uploader.upload_large(
-            temp_path,
-            resource_type="auto",
-            chunk_size=10000000 # 10MB chunks (ideal for Reels)
-        )
+        # Secure filename with UUID
+        ext = file.filename.split('.')[-1] if '.' in file.filename else 'bin'
+        unique_id = uuid.uuid4().hex
+        new_filename = f"{unique_id}.{ext}"
+        
+        file_path = upload_dir / new_filename
+        
+        # Save to local disk
+        with open(file_path, "wb") as f_out:
+            shutil.copyfileobj(file.file, f_out)
+            
+        file_url = f"http://127.0.0.1:8000/uploads/{new_filename}"
+        print(f"✅ [SUCCESS] File saved locally at: {file_url}")
 
-        print(f"✅ [SUCCESS] Cloudinary URL: {result['secure_url']}")
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-        return {"url": result["secure_url"]}
+        return {"url": file_url}
 
     except Exception as e:
         print(f"❌ [CRITICAL] Upload Error: {str(e)}")
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise HTTPException(status_code=500, detail=f"Cloudinary Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload Error: {str(e)}")
 
 
 # ---------- AUTH ----------
@@ -779,8 +773,7 @@ async def get_music_library(q: Optional[str] = None, db: Session = Depends(get_d
     # If a search query is provided, fetch from iTunes API
     if q:
         try:
-            # Search for Tamil music specifically if the user is looking for it
-            search_query = q if "tamil" in q.lower() else f"{q} Tamil"
+            search_query = q
             response = requests.get(
                 f"https://itunes.apple.com/search?term={search_query}&entity=song&limit=10",
                 timeout=5
